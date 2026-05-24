@@ -79,24 +79,44 @@
     <div class="row"><label>NAME</label>
       <input type="text" id="name_input" maxlength="14" placeholder="ENTER NAME">
     </div>
-    <h2 style="font-size:14px;margin:14px 0 8px 0;color:#888">SELECT MODE</h2>
-    <div class="mode-row">
-      <button class="mode-btn active" data-mode="coop">
-        <div class="t">CO-OP</div><div class="d">Team up vs waves of bots</div>
-      </button>
-      <button class="mode-btn" data-mode="ffa">
-        <div class="t">FFA</div><div class="d">Free-for-all deathmatch</div>
-      </button>
-      <button class="mode-btn" data-mode="tdm">
-        <div class="t">TDM</div><div class="d">Team deathmatch (2v2)</div>
-      </button>
+    <!-- ── CREATE flow (default) ── -->
+    <div id="create_section">
+      <h2 style="font-size:14px;margin:14px 0 8px 0;color:#888">SELECT MODE</h2>
+      <div class="mode-row">
+        <button class="mode-btn active" data-mode="coop">
+          <div class="t">CO-OP</div><div class="d">Team up vs waves of bots</div>
+        </button>
+        <button class="mode-btn" data-mode="ffa">
+          <div class="t">FFA</div><div class="d">Free-for-all deathmatch</div>
+        </button>
+        <button class="mode-btn" data-mode="tdm">
+          <div class="t">TDM</div><div class="d">Team deathmatch (2v2)</div>
+        </button>
+      </div>
+      <div class="row" style="margin-top:22px;justify-content:center">
+        <button class="go" id="btn_create" style="min-width:220px;font-size:20px;padding:16px 28px">CREATE GAME</button>
+      </div>
+      <div style="text-align:center;margin-top:18px">
+        <a href="#" id="show_join_link"
+           style="color:#888;font-size:13px;letter-spacing:2px;text-decoration:none">
+          GOT A CODE? <span style="color:#00e5ff">JOIN A GAME →</span>
+        </a>
+      </div>
     </div>
-    <div class="row" style="margin-top:18px;justify-content:center;gap:14px">
-      <button class="go" id="btn_create">CREATE GAME</button>
-    </div>
-    <div class="row" style="justify-content:center"><label>OR JOIN</label>
-      <input type="text" id="code_input" maxlength="4" placeholder="CODE" style="text-align:center;max-width:120px">
-      <button id="btn_join">JOIN</button>
+    <!-- ── JOIN flow ── -->
+    <div id="join_section" class="hidden">
+      <h2 style="font-size:14px;margin:14px 0 8px 0;color:#888;text-align:center">JOIN A GAME</h2>
+      <div class="row" style="justify-content:center;gap:10px;margin-top:6px">
+        <input type="text" id="code_input" maxlength="4" placeholder="CODE"
+               style="text-align:center;letter-spacing:6px;max-width:160px;font-size:22px;font-weight:bold">
+        <button class="go" id="btn_join" style="min-width:120px">JOIN</button>
+      </div>
+      <div style="text-align:center;margin-top:18px">
+        <a href="#" id="show_create_link"
+           style="color:#888;font-size:13px;letter-spacing:2px;text-decoration:none">
+          OR <span style="color:#00e5ff">CREATE A NEW GAME →</span>
+        </a>
+      </div>
     </div>
     <div class="err" id="err_home"></div>
   </div>
@@ -109,6 +129,12 @@
   <div class="panel" style="min-width:380px">
     <div style="text-align:center;color:#888;font-size:13px;letter-spacing:3px">ROOM CODE</div>
     <div class="code-display" id="lobby_code">— — — —</div>
+    <div style="text-align:center;color:#888;font-size:11px;letter-spacing:2px;margin-top:12px">SHARE THIS LINK</div>
+    <div class="row" style="gap:6px;margin-top:6px">
+      <input type="text" id="lobby_link" readonly
+             style="font-size:12px;letter-spacing:0;text-transform:none;flex:1;cursor:text">
+      <button id="btn_copy_link" style="min-width:90px">COPY</button>
+    </div>
     <h2 style="font-size:14px;margin:14px 0 6px 0;color:#888">PLAYERS</h2>
     <ul class="player-list" id="lobby_players"></ul>
     <div id="tdm_team_panel" style="display:none">
@@ -373,7 +399,16 @@ function showMenu(id){
 }
 function hideMenu(id){ $(id).classList.add('hidden'); }
 function showGame(){ for(const el of document.querySelectorAll('.menu')) el.classList.add('hidden'); currentScreen='game'; }
-function goHome(){ showMenu('menu_home'); state=null; lobby=null; selfPicking=false; }
+function goHome(){
+  showMenu('menu_home');
+  state=null; lobby=null; selfPicking=false;
+  // Reset to the CREATE view and clear the join code from the URL so a
+  // refresh doesn't bounce the user back into JOIN with a now-dead code.
+  if(typeof showCreateSection === 'function') showCreateSection();
+  if(location.search.match(/[?&](join|code)=/i)){
+    history.replaceState(null, '', location.pathname);
+  }
+}
 function showError(msg){
   lastErr = msg;
   const el = currentScreen==='home' ? $('err_home') : null;
@@ -388,6 +423,26 @@ document.querySelectorAll('.mode-btn').forEach(btn=>{
     mode = btn.dataset.mode;
   });
 });
+
+// Create / Join section toggling
+function showCreateSection(){
+  $('create_section').classList.remove('hidden');
+  $('join_section').classList.add('hidden');
+}
+function showJoinSection(){
+  $('create_section').classList.add('hidden');
+  $('join_section').classList.remove('hidden');
+  setTimeout(()=>$('code_input').focus(), 0);
+}
+$('show_join_link').addEventListener('click', e => { e.preventDefault(); showJoinSection(); });
+$('show_create_link').addEventListener('click', e => { e.preventDefault(); showCreateSection(); });
+
+// Auto-fill code from URL (?join=XYZW or ?code=XYZW) and flip to JOIN view
+(function(){
+  const p = new URLSearchParams(location.search);
+  const c = (p.get('join') || p.get('code') || '').trim().toUpperCase();
+  if(c){ $('code_input').value = c; showJoinSection(); }
+})();
 
 $('btn_create').addEventListener('click', async ()=>{
   const name = ($('name_input').value || 'Player').trim();
@@ -428,6 +483,22 @@ $('btn_team_blue').addEventListener('click', ()=>{
   if(me && me.team !== 1) send({type:'switchTeam'});
 });
 
+$('btn_copy_link').addEventListener('click', async ()=>{
+  const v = $('lobby_link').value;
+  const btn = $('btn_copy_link');
+  const orig = btn.textContent;
+  let ok = false;
+  try { await navigator.clipboard.writeText(v); ok = true; }
+  catch {
+    // fallback for older browsers / non-secure contexts
+    $('lobby_link').select();
+    try { ok = document.execCommand('copy'); } catch {}
+  }
+  btn.textContent = ok ? 'COPIED ✓' : 'COPY';
+  if(!ok) $('lobby_link').select();
+  setTimeout(()=>{ btn.textContent = orig; }, 1500);
+});
+
 $('btn_rematch').addEventListener('click', ()=>{ send({type:'rematch'}); hideMenu('menu_gameover'); });
 $('btn_rematch_leave').addEventListener('click', ()=>{
   send({type:'leave'});
@@ -438,6 +509,7 @@ $('btn_rematch_leave').addEventListener('click', ()=>{
 function renderLobby(){
   if(!lobby) return;
   $('lobby_code').textContent = lobby.code.split('').join(' ');
+  $('lobby_link').value = `${location.origin}/?join=${lobby.code}`;
   $('lobby_title').textContent = ({coop:'CO-OP LOBBY',ffa:'FFA LOBBY',tdm:'TDM LOBBY'})[lobby.mode] || 'LOBBY';
   const ul = $('lobby_players'); ul.innerHTML = '';
   for(const p of lobby.players){
