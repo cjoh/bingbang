@@ -28,25 +28,32 @@ def run(cmd, cwd=None):
     p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
     return p.returncode, (p.stdout + p.stderr).strip()
 
-def deploy():
+def _deploy_blocking():
+    steps = []
+    for cmd in (
+        ["git", "fetch", "origin", BRANCH],
+        ["git", "reset", "--hard", f"origin/{BRANCH}"],
+        ["git", "clean", "-fd"],
+        ["docker", "compose", "-p", "bingbang", "-f", "docker-compose.yml", "up", "-d", "--build", "bingbang"],
+    ):
+        rc, out = run(cmd, cwd=REPO_DIR)
+        steps.append(f"$ {' '.join(cmd)}\n[rc={rc}]\n{out}\n")
+        if rc != 0:
+            print("[deploy] FAILED step:", cmd, flush=True)
+            print("[deploy]", out, flush=True)
+            return
+    print("[deploy] OK", flush=True)
+
+def deploy_async():
+    """Dispatch a deploy in the background; return immediately."""
     global _last_run
     with _lock:
-        # rate limit: once every 5s max
         now = time.time()
-        if now - _last_run < 5: return "rate-limited", 200
+        if now - _last_run < 5:
+            return "rate-limited"
         _last_run = now
-        steps = []
-        for cmd in (
-            ["git", "fetch", "origin", BRANCH],
-            ["git", "reset", "--hard", f"origin/{BRANCH}"],
-            ["git", "clean", "-fd"],
-            ["docker", "compose", "-p", "bingbang", "-f", "docker-compose.yml", "up", "-d", "--build", "bingbang"],
-        ):
-            rc, out = run(cmd, cwd=REPO_DIR)
-            steps.append(f"$ {' '.join(cmd)}\n[rc={rc}]\n{out}\n")
-            if rc != 0:
-                return "\n".join(steps), 500
-        return "\n".join(steps), 200
+    threading.Thread(target=_deploy_blocking, daemon=True).start()
+    return "queued"
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def _reply(self, code, body=""):
@@ -88,8 +95,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         ref = payload.get("ref", "")
         if ref != f"refs/heads/{BRANCH}":
             return self._reply(200, f"ignored ref: {ref}")
-        out, code = deploy()
-        return self._reply(code, out)
+        return self._reply(202, deploy_async() + "\n")
 
     def log_message(self, fmt, *args):
         print("[deploy]", self.address_string(), fmt % args, flush=True)
