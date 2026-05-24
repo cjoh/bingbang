@@ -63,7 +63,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self._reply(404, "")
 
     def do_POST(self):
-        if self.path not in ("/", "/deploy"):
+        if self.path not in ("/", "/deploy", "/__deploy"):
             return self._reply(404, "")
         try:
             n = int(self.headers.get("Content-Length", "0"))
