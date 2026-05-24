@@ -1333,6 +1333,35 @@ class Room:
             "events": self.events,
         }
 
+    def resolve_entity_collisions(self):
+        """Soft-body push apart any overlapping living players / bots."""
+        entities = [p for p in self.players.values() if p["alive"]] + list(self.bots)
+        n = len(entities)
+        if n < 2: return
+        # Relaxation passes — handles chained overlaps (3+ entities stacked).
+        for _ in range(8):
+            for i in range(n):
+                a = entities[i]
+                ar = a["r"]
+                for j in range(i + 1, n):
+                    b = entities[j]
+                    dx = b["x"] - a["x"]; dy = b["y"] - a["y"]
+                    min_d = ar + b["r"]
+                    d2 = dx*dx + dy*dy
+                    if d2 >= min_d * min_d: continue
+                    if d2 < 1e-6:
+                        # exactly coincident — pick a random axis
+                        ang = random.random() * math.tau
+                        dx, dy = math.cos(ang), math.sin(ang); d = 1.0
+                    else:
+                        d = math.sqrt(d2); dx /= d; dy /= d
+                    overlap = min_d - d
+                    half = overlap * 0.5
+                    a["x"] -= dx * half; a["y"] -= dy * half
+                    b["x"] += dx * half; b["y"] += dy * half
+        for e in entities:
+            push_out_of_walls(e)
+
     def tick(self, dt):
         self.t += dt
         self.bullet_time = max(0, self.bullet_time - dt)
@@ -1340,6 +1369,7 @@ class Room:
             self.update_players(dt)
             self.update_bullets(dt)
             self.update_bots(dt)
+            self.resolve_entity_collisions()
             self.check_collisions()
             self.update_wave(dt)
             self.update_pvp_match(dt)
@@ -1347,6 +1377,7 @@ class Room:
             # still let bullets/particles finish, but no new wave action
             self.update_players(dt)
             self.update_bullets(dt)
+            self.resolve_entity_collisions()
             self.check_collisions()
 
     async def run_loop(self):
