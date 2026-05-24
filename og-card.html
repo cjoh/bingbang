@@ -1,0 +1,130 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@800;900&family=Major+Mono+Display&family=VT323&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:1200px;height:630px;overflow:hidden;background:#000;font-family:'VT323',monospace}
+  .card{
+    position:relative;width:1200px;height:630px;overflow:hidden;
+    background:
+      radial-gradient(ellipse 70% 50% at 50% 25%, rgba(255,42,109,0.35), transparent 70%),
+      radial-gradient(ellipse 100% 60% at 50% 100%, rgba(0,229,255,0.30), transparent 60%),
+      linear-gradient(180deg,#040016 0%,#0a0028 60%,#000814 100%);
+  }
+  /* Arena floor tile (mini approximation of the game's "Vault" map) */
+  .arena{
+    position:absolute;left:50%;top:46%;
+    transform:translate(-50%,-50%);
+    width:880px;height:300px;
+    background:
+      linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px) 0 0/30px 30px,
+      linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px) 0 0/30px 30px,
+      linear-gradient(180deg, #0e0a22 0%, #150929 100%);
+    border:2px solid #2a2a70;
+    box-shadow:0 0 60px rgba(157,0,255,0.4) inset, 0 0 40px rgba(0,229,255,0.2);
+    opacity:0.85;
+  }
+  /* Wall blocks (brutalist little obstacles for vibe) */
+  .wall{
+    position:absolute;background:#1a1a40;border:1px solid #2a2a70;
+    box-shadow: 2px 2px 8px rgba(0,0,0,0.6);
+  }
+  /* Player + bot dots */
+  .actor{
+    position:absolute;width:38px;height:38px;border-radius:50%;
+    transform:translate(-50%,-50%);
+  }
+  .player-cyan { background:#00e5ff; box-shadow:0 0 24px #00e5ff,0 0 50px rgba(0,229,255,0.5); }
+  .player-orange{ background:#ff8800; box-shadow:0 0 24px #ff8800,0 0 50px rgba(255,136,0,0.5); }
+  .bot1 { background:#ff44aa; box-shadow:0 0 22px #ff44aa,0 0 44px rgba(255,68,170,0.5); width:32px;height:32px; }
+  .bot2 { background:#ff2244; box-shadow:0 0 22px #ff2244,0 0 44px rgba(255,34,68,0.5); width:32px;height:32px; }
+  /* Bullet streaks */
+  .bullet{
+    position:absolute;height:5px;border-radius:99px;
+    background:#ffee33;
+    box-shadow:0 0 14px #ffee33, 0 0 26px #ffee33;
+    transform:translate(-50%,-50%);
+  }
+  /* Scanlines + vignette */
+  .crt{
+    position:absolute;inset:0;pointer-events:none;
+    background:
+      repeating-linear-gradient(0deg,rgba(0,0,0,0.15) 0 1px,transparent 1px 3px),
+      radial-gradient(ellipse at center,transparent 50%,rgba(0,0,0,0.65) 100%);
+    mix-blend-mode:multiply;
+  }
+  /* Headline cluster (top) */
+  .top{position:absolute;left:0;right:0;top:30px;text-align:center;z-index:5}
+  .kicker{
+    display:inline-block;
+    font-family:'Major Mono Display',monospace;
+    color:#ffee33;font-size:18px;letter-spacing:0.55em;
+    padding:5px 16px;border:2px solid #ffee33;
+    box-shadow:0 0 14px rgba(255,238,51,0.6),inset 0 0 14px rgba(255,238,51,0.2);
+    text-shadow:0 0 10px #ffee33;
+  }
+  h1{
+    font-family:'Orbitron',sans-serif;font-weight:900;
+    font-size:148px;letter-spacing:0.04em;line-height:0.95;color:#fff;
+    text-shadow:0 0 12px #fff,0 0 28px #00e5ff,0 0 52px #ff2a6d,0 0 90px #9d00ff;
+    position:relative;margin-top:18px;
+  }
+  h1::before,h1::after{
+    content:attr(data-text);position:absolute;left:0;top:0;width:100%;
+    pointer-events:none;
+  }
+  h1::before{color:#ff2a6d;transform:translate(-5px,1px);mix-blend-mode:screen;opacity:0.9}
+  h1::after {color:#00e5ff;transform:translate( 5px,-1px);mix-blend-mode:screen;opacity:0.9}
+  /* Bottom strip */
+  .bottom{position:absolute;left:0;right:0;bottom:30px;text-align:center;z-index:6}
+  .tag{
+    color:#ff61c7;font-size:26px;letter-spacing:0.4em;
+    text-shadow:0 0 14px #ff61c7;
+    font-family:'Orbitron',sans-serif;font-weight:800;
+    margin-bottom:8px;
+  }
+  .meta{
+    color:#00e5ff;font-family:'Major Mono Display',monospace;
+    letter-spacing:0.5em;font-size:18px;text-shadow:0 0 10px #00e5ff;
+  }
+  /* Brutalist corner brackets */
+  .corner-tl,.corner-br{position:absolute;width:36px;height:36px;z-index:7}
+  .corner-tl{top:30px;left:30px;border-left:3px solid #00e5ff;border-top:3px solid #00e5ff;box-shadow:0 0 12px #00e5ff}
+  .corner-br{bottom:30px;right:30px;border-right:3px solid #ff2a6d;border-bottom:3px solid #ff2a6d;box-shadow:0 0 12px #ff2a6d}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="arena">
+    <!-- arena obstacles -->
+    <div class="wall" style="left:80px;top:50px;width:90px;height:25px"></div>
+    <div class="wall" style="left:80px;top:225px;width:90px;height:25px"></div>
+    <div class="wall" style="left:380px;top:40px;width:130px;height:35px"></div>
+    <div class="wall" style="left:710px;top:50px;width:90px;height:25px"></div>
+    <div class="wall" style="left:710px;top:225px;width:90px;height:25px"></div>
+    <div class="wall" style="left:380px;top:225px;width:130px;height:35px"></div>
+    <div class="wall" style="left:300px;top:130px;width:35px;height:35px"></div>
+    <div class="wall" style="left:560px;top:130px;width:35px;height:35px"></div>
+    <!-- bullet streaks -->
+    <div class="bullet" style="left:480px;top:160px;width:120px;transform:translate(-50%,-50%) rotate(8deg)"></div>
+    <div class="bullet" style="left:680px;top:120px;width:90px;transform:translate(-50%,-50%) rotate(-12deg)"></div>
+    <div class="bullet" style="left:280px;top:200px;width:90px;transform:translate(-50%,-50%) rotate(-4deg)"></div>
+    <!-- actors -->
+    <div class="actor player-cyan"   style="left:220px;top:160px"></div>
+    <div class="actor player-orange" style="left:420px;top:90px"></div>
+    <div class="actor bot1"          style="left:620px;top:200px"></div>
+    <div class="actor bot2"          style="left:760px;top:90px"></div>
+  </div>
+  <div class="crt"></div>
+  <div class="corner-tl"></div>
+  <div class="corner-br"></div>
+  <div class="top">
+    <div class="kicker">CO-OP · FFA · TDM</div>
+    <h1 data-text="BING BANG">BING BANG</h1>
+  </div>
+  <div class="bottom">
+    <div class="tag">TOP-DOWN ARENA SHOOTER</div>
+    <div class="meta">// 4 PLAYERS · 28 ABILITIES //</div>
+  </div>
+</div>
+</body></html>
