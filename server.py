@@ -397,6 +397,10 @@ MIME = {
 SERVE_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 async def serve_static(writer, path):
+    # Strip any ?query and #fragment so /?join=ABCD still maps to /index.html
+    for sep in ("?", "#"):
+        if sep in path:
+            path = path.split(sep, 1)[0]
     if path == "/" or path == "":
         path = "/index.html"
     # prevent path traversal
