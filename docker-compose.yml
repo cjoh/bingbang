@@ -1,0 +1,29 @@
+services:
+  bingbang:
+    build: .
+    container_name: bingbang
+    restart: unless-stopped
+    networks:
+      - twenty_default
+    # No port mapping: traffic flows through Caddy on the shared network.
+
+  deploy:
+    build:
+      context: .
+      dockerfile: Dockerfile.deploy
+    container_name: bingbang-deploy
+    restart: unless-stopped
+    environment:
+      - DEPLOY_SECRET=${DEPLOY_SECRET}
+      - REPO_DIR=/repo
+      - GIT_REMOTE=origin
+      - GIT_BRANCH=main
+    volumes:
+      - /home/cjoh/bingbang:/repo
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - twenty_default
+
+networks:
+  twenty_default:
+    external: true
