@@ -470,7 +470,6 @@ def make_bot(x, y, wave):
         "replanCd": random.random() * 0.4,  # staggered initial replans
         "stuckTimer": 0.0,
         "lastX": float(x), "lastY": float(y),
-        "strafeBias": random.choice((-1, 1)),  # for kiting variety
     }
 
 def spawn_pos_for(room, team=None):
@@ -668,7 +667,8 @@ class Room:
 
     def start_wave(self, n):
         self.wave = n
-        self.bots_to_spawn = 3 + n * 2
+        # Wave 1 → 3 bots, wave 2 → 4, wave 3 → 5, …
+        self.bots_to_spawn = n + 2
         self.spawn_timer = 0
         self.phase = "playing"
         for p in self.players.values():
@@ -1074,25 +1074,15 @@ class Room:
                             bot["path"] = []
 
                 # ── MOVEMENT ────────────────────────────────────────────────
-                desired_range = 240  # bots prefer to stay in this kiting band
-                close_range = 130
+                # Dumb chase: walk toward the player whenever we can see them.
+                # No kiting, no strafing — just shamble in.
+                MIN_RANGE = 70  # stop pushing in when bumping into the player
                 if has_los:
                     bot["path"] = []  # clear path; we can see the player
-                    if dist > desired_range:
-                        # approach
+                    if dist > MIN_RANGE:
                         bot["x"] += dx/dist * bot["speed"] * dt * slow
                         bot["y"] += dy/dist * bot["speed"] * dt * slow
-                    elif dist < close_range:
-                        # back away a touch
-                        bot["x"] -= dx/dist * bot["speed"] * 0.6 * dt * slow
-                        bot["y"] -= dy/dist * bot["speed"] * 0.6 * dt * slow
-                    else:
-                        # strafe in band
-                        sx = -dy/dist * bot["strafeBias"]
-                        sy =  dx/dist * bot["strafeBias"]
-                        bot["x"] += sx * bot["speed"] * 0.55 * dt * slow
-                        bot["y"] += sy * bot["speed"] * 0.55 * dt * slow
-                    push_out_of_walls(bot)
+                        push_out_of_walls(bot)
                 elif bot["path"]:
                     wp = bot["path"][0]
                     wdx = wp[0] - bot["x"]; wdy = wp[1] - bot["y"]
@@ -1116,10 +1106,9 @@ class Room:
                 else:
                     bot["stuckTimer"] = 0
                 if bot["stuckTimer"] > 0.6:
-                    # force replan + flip strafe direction
+                    # force a fresh replan
                     bot["replanCd"] = 0
                     bot["path"] = []
-                    bot["strafeBias"] *= -1
                     bot["stuckTimer"] = 0
                 bot["lastX"] = bot["x"]; bot["lastY"] = bot["y"]
 
