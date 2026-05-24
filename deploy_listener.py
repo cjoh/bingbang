@@ -40,7 +40,7 @@ def deploy():
             ["git", "fetch", "origin", BRANCH],
             ["git", "reset", "--hard", f"origin/{BRANCH}"],
             ["git", "clean", "-fd"],
-            ["docker", "compose", "-f", "docker-compose.yml", "up", "-d", "--build", "bingbang"],
+            ["docker", "compose", "-p", "bingbang", "-f", "docker-compose.yml", "up", "-d", "--build", "bingbang"],
         ):
             rc, out = run(cmd, cwd=REPO_DIR)
             steps.append(f"$ {' '.join(cmd)}\n[rc={rc}]\n{out}\n")
