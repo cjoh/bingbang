@@ -429,6 +429,8 @@ def next_bot_id():
     _bot_id_seq += 1
     return _bot_id_seq
 
+COOP_STARTING_LIVES = 3
+
 def make_player(pid, name, color, team=0):
     return {
         "id": pid, "name": name[:14] or "Player", "color": color, "team": team,
@@ -441,6 +443,7 @@ def make_player(pid, name, color, team=0):
         "shield": False, "shieldCdTotal": 8.0, "shieldCd": 0.0,
         "score": 0, "kills": 0, "deaths": 0,
         "alive": True, "respawnAt": 0.0, "lastDamagerId": None,
+        "lives": COOP_STARTING_LIVES,    # co-op only; deaths consume one
         # input
         "keys": set(), "mx": 600.0, "my": 400.0, "firing": False, "dashQueued": False,
         # card pick state
@@ -503,6 +506,7 @@ class Room:
         self.clients = {}       # pid -> WSClient
         self.bots = []
         self.bullets = []
+        self.revive_markers = []   # co-op: list of {pid, x, y}
         self.events = []        # FX events for next snapshot
         self.phase = "lobby"    # lobby | playing | card_select | game_over
         self.wave = 0
@@ -623,6 +627,7 @@ class Room:
         # reset
         self.bots.clear()
         self.bullets.clear()
+        self.revive_markers.clear()
         self.events.clear()
         self.team_scores = [0, 0]
         self.winner = None
@@ -641,6 +646,7 @@ class Room:
             p["shieldCd"] = 0
             p["dashCooldown"] = 0
             p["pendingCards"] = None
+            p["lives"] = COOP_STARTING_LIVES
             x, y = spawn_pos_for(self, p["team"])
             p["x"], p["y"] = x, y
 
@@ -798,8 +804,14 @@ class Room:
         p["deaths"] += 1
         self.events.append({"k":"playerDie","x":p["x"],"y":p["y"],"color":p["color"]})
         if self.mode == "coop":
-            # In coop: respawn after wave clear (or 5s grace)
-            p["respawnAt"] = self.t + 8.0
+            # Spend a life. If any remain, drop a revive marker; else permadeath.
+            p["lives"] = max(0, p["lives"] - 1)
+            p["respawnAt"] = 0  # no auto-respawn in coop
+            if p["lives"] > 0:
+                self.revive_markers.append({
+                    "pid": p["id"], "x": p["x"], "y": p["y"], "color": p["color"],
+                })
+                self.events.append({"k":"downed","x":p["x"],"y":p["y"],"color":p["color"]})
         else:
             # PvP / TDM
             p["respawnAt"] = self.t + 3.0
@@ -853,9 +865,9 @@ class Room:
             p["shieldCd"] = max(0, p["shieldCd"] - dt)
             if "shield" in p["abilities"] and not p["shield"] and p["shieldCd"] <= 0 and self.mode in ("ffa","tdm"):
                 p["shield"] = True
-            # respawn
+            # respawn (PvP/TDM only — co-op uses lives + revive markers)
             if not p["alive"]:
-                if self.t >= p["respawnAt"]:
+                if self.mode != "coop" and self.t >= p["respawnAt"]:
                     p["alive"] = True
                     p["hp"] = p["maxHp"]
                     p["invuln"] = 1.2
@@ -907,6 +919,28 @@ class Room:
                 if not p["pendingCards"]:
                     p["fireCooldown"] = p["fireRate"]
                     self.fire_player(p)
+
+            # ── Co-op revive: alive player stepping over a teammate's marker ─
+            if self.mode == "coop" and self.revive_markers:
+                MARKER_R = 24.0
+                for m in list(self.revive_markers):
+                    if m["pid"] == p["id"]: continue
+                    if math.hypot(p["x"] - m["x"], p["y"] - m["y"]) >= p["r"] + MARKER_R:
+                        continue
+                    downed = self.players.get(m["pid"])
+                    if not downed:
+                        self.revive_markers.remove(m); continue
+                    # Revive at the marker location
+                    downed["alive"] = True
+                    downed["x"], downed["y"] = m["x"], m["y"]
+                    downed["hp"] = max(1.0, downed["maxHp"] * 0.5)
+                    downed["invuln"] = 1.4
+                    downed["dashVx"] = 0; downed["dashVy"] = 0
+                    self.revive_markers.remove(m)
+                    self.events.append({
+                        "k":"revive","x":m["x"],"y":m["y"],
+                        "color": downed["color"], "by": p["id"],
+                    })
 
     def update_bullets(self, dt):
         keep = []
@@ -1197,6 +1231,12 @@ class Room:
     def update_wave(self, dt):
         if self.mode != "coop" or self.phase != "playing":
             return
+        # ── Game over if no one is alive (everyone permadead or downed) ──
+        if not any(p["alive"] for p in self.players.values()):
+            self.phase = "game_over"
+            self.winner = None  # defeat
+            self.events.append({"k":"matchEnd"})
+            return
         if self.bots_to_spawn > 0:
             self.spawn_timer -= dt
             if self.spawn_timer <= 0:
@@ -1211,16 +1251,12 @@ class Room:
                 self.bots.append(make_bot(x + (random.random()-0.5)*16,
                                           y + (random.random()-0.5)*16, self.wave))
         if self.bots_to_spawn == 0 and not self.bots:
-            # wave clear → cards for everyone alive
+            # wave clear → cards. Downed players stay downed (must be revived
+            # mid-fight by teammates). Permadead players can't pick cards.
             self.phase = "card_select"
-            # revive any dead players for next round
             for p in self.players.values():
-                if not p["alive"]:
-                    p["alive"] = True
-                    p["hp"] = max(50, p["maxHp"] * 0.6)
-                    x, y = spawn_pos_for(self, p["team"])
-                    p["x"], p["y"] = x, y
-                self.offer_cards(p["id"])
+                if p["alive"]:
+                    self.offer_cards(p["id"])
 
     def update_pvp_match(self, dt):
         if self.mode == "coop" or self.phase != "playing":
@@ -1286,9 +1322,14 @@ class Room:
                     "kills": p["kills"], "deaths": p["deaths"], "score": p["score"],
                     "abilities": p["abilities"],
                     "picking": bool(p["pendingCards"]),
+                    "lives": p["lives"],
                 }
                 for p in self.players.values()
             ],
+            "reviveMarkers": [
+                {"pid": m["pid"], "x": round(m["x"],1), "y": round(m["y"],1), "color": m["color"]}
+                for m in self.revive_markers
+            ] if self.mode == "coop" else [],
             "bullets": [
                 {"x": round(b["x"],1), "y": round(b["y"],1), "r": b["r"], "c": b["color"]}
                 for b in self.bullets

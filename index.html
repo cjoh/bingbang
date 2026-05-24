@@ -325,6 +325,15 @@ function processEvents(evts){
       spawnParticle(e.x,e.y,'#00ffee',12,0.3,1.4);
       snd.dash();
     }
+    else if(e.k==='downed'){
+      // teammate downed — softer particles than full death
+      spawnParticle(e.x,e.y,e.color||'#fff',14,0.7,1.1);
+    }
+    else if(e.k==='revive'){
+      spawnParticle(e.x,e.y,e.color||'#fff',30,0.9,1.4);
+      spawnParticle(e.x,e.y,'#fff',12,0.6,1.0);
+      snd.pickup();
+    }
     else if(e.k==='shield'){
       spawnParticle(e.x,e.y,'#ffd700',22,0.7,1.6);
       snd.shield();
@@ -633,18 +642,57 @@ function drawWalls(){
     ctx.strokeRect(w.x+.5,w.y+.5,w.w-1,w.h-1);
   }
 }
+function drawReviveMarkers(){
+  if(!state || !state.reviveMarkers || !state.reviveMarkers.length) return;
+  const t = performance.now() / 1000;
+  ctx.save();
+  for(const m of state.reviveMarkers){
+    const pulse = 0.7 + Math.sin(t * 4) * 0.3;
+    const baseR = 24;
+    // outer glow ring
+    ctx.globalAlpha = 0.45 * pulse;
+    ctx.strokeStyle = m.color; ctx.lineWidth = 3;
+    ctx.shadowColor = m.color; ctx.shadowBlur = 18;
+    ctx.beginPath(); ctx.arc(m.x, m.y, baseR + 6*pulse, 0, Math.PI*2); ctx.stroke();
+    // inner filled circle
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = m.color;
+    ctx.beginPath(); ctx.arc(m.x, m.y, baseR*0.5, 0, Math.PI*2); ctx.fill();
+    // heart icon
+    ctx.globalAlpha = 0.95;
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 22px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('♥', m.x, m.y + 8);
+    ctx.shadowBlur = 0;
+    // owner name + "REVIVE" prompt
+    const owner = state.players.find(pp => pp.id === m.pid);
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = m.color;
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText('REVIVE ' + (owner ? owner.name.toUpperCase() : ''), m.x, m.y - baseR - 6);
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
 function drawPlayers(){
   if(!state) return;
   for(const p of state.players){
     if(!p.alive){
-      // dead marker
-      ctx.save(); ctx.globalAlpha=0.35; ctx.strokeStyle=p.color; ctx.lineWidth=2;
-      ctx.setLineDash([3,4]);
-      ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.stroke();
-      ctx.setLineDash([]); ctx.restore();
-      // nameplate
-      ctx.fillStyle='#666'; ctx.font='11px monospace'; ctx.textAlign='center';
-      ctx.fillText(p.name+' (down)', p.x, p.y - p.r - 8);
+      const hasMarker = state.reviveMarkers && state.reviveMarkers.some(m => m.pid === p.id);
+      // dead marker (drawn only if no revive marker — otherwise drawReviveMarkers handles it)
+      if(!hasMarker){
+        ctx.save(); ctx.globalAlpha=0.35; ctx.strokeStyle=p.color; ctx.lineWidth=2;
+        ctx.setLineDash([3,4]);
+        ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.stroke();
+        ctx.setLineDash([]); ctx.restore();
+        // nameplate — permadead in coop
+        const label = (state.mode==='coop' && p.lives===0) ? p.name+' (out)' : p.name+' (down)';
+        ctx.fillStyle = (state.mode==='coop' && p.lives===0) ? '#ff3366' : '#666';
+        ctx.font='11px monospace'; ctx.textAlign='center';
+        ctx.fillText(label, p.x, p.y - p.r - 8);
+      }
       continue;
     }
     if(p.invuln>0 && Math.floor(p.invuln*20)%2 && p.id !== myPid) continue;
@@ -796,7 +844,16 @@ function drawHUD(){
   for(const p of sorted){
     ctx.fillStyle = p.id===myPid ? '#fff' : (state.mode==='tdm'?(p.team===0?'#ff7799':'#88aaff'):'#aaa');
     const star = p.id === myPid ? '▸ ' : '';
-    ctx.fillText(`${star}${p.name}  ${p.kills}k / ${p.deaths}d`, W-28, yy);
+    let line = `${star}${p.name}`;
+    if(state.mode==='coop'){
+      // hearts for remaining lives
+      const hearts = '♥'.repeat(p.lives) + '·'.repeat(Math.max(0, 3 - p.lives));
+      line += `  ${hearts}`;
+      if(!p.alive) line += p.lives===0 ? ' OUT' : ' DOWN';
+    } else {
+      line += `  ${p.kills}k / ${p.deaths}d`;
+    }
+    ctx.fillText(line, W-28, yy);
     yy += 16;
   }
   // bottom-left: my HP + abilities
@@ -892,7 +949,7 @@ function loop(ts){
     const sx = (Math.random()-0.5)*shake*2, sy = (Math.random()-0.5)*shake*2;
     ctx.save(); ctx.translate(sx,sy);
     drawFloor(); drawBloods(); drawCorpses(); drawWalls();
-    drawParticles(); drawBullets(); drawBots(); drawPlayers();
+    drawParticles(); drawReviveMarkers(); drawBullets(); drawBots(); drawPlayers();
     drawDmgNums(); drawVignette(); drawScanlines();
     drawHUD();
     if(selfPicking) drawCardSelect();
